@@ -1069,3 +1069,116 @@ int updateInterval = Math.Max(1, (int)(total / (processorCount * responsivenessF
 ---
 
 他にも「進捗％表示を滑らかにしたい」とか「最後だけ強制更新」とかも可能なので、必要ならそこも調整できるよ！進捗ラベルつける？それとも、アニメーション的な見せ方したい？
+
+めっちゃ良い質問です。それ、**意味あるときとないときがある**んですよ😎  
+状況によって使い分けるのがポイント！
+
+---
+
+## 🎯 質問の本質
+
+> `Parallel.For(...)` だけで並列処理できるのに、  
+> わざわざ `Task.Run(() => Parallel.For(...))` と書く意味ある？
+
+答えは 👇
+
+---
+
+## ✅ ざっくり結論
+
+| 組み合わせ              | 意味があるか？ | なぜ必要／不要？ |
+|-------------------------|----------------|-------------------|
+| `Parallel.For(...)`     | ✅ 並列実行される | 同期的に**ブロック**される（メインスレッドで実行） |
+| `Task.Run(...Parallel)` | ✅ 非同期実行    | **メインスレッドをブロックしない**のでWPFなどUIアプリで◎ |
+| `await Task.Run(...)`   | ✅ 非同期＋待機 | WPFで「UIフリーズさせず完了を待ちたい」ときベスト |
+
+---
+
+## 🔍 実際の動作イメージ
+
+### ❌ 悪い例（WPFなどでUI固まる）
+
+```csharp
+// これをボタンクリックで実行したらUI固まる
+Parallel.For(0, 10000, i =>
+{
+    HeavyWork(i); // 処理が終わるまでUI動かない
+});
+```
+
+---
+
+### ✅ 良い例（UIがフリーズしない）
+
+```csharp
+// 非同期でParallel.Forを別スレッドで走らせる
+await Task.Run(() =>
+{
+    Parallel.For(0, 10000, i =>
+    {
+        HeavyWork(i);
+    });
+});
+```
+
+👆 この形が**WPFの正解パターン**  
+→ メインスレッド(UI)はサクサク動きつつ、処理は並列バックグラウンド！
+
+---
+
+## 🎓 ざっくり理解まとめ
+
+| パターン                       | 実行スレッド        | UIフリーズ |
+|------------------------------|---------------------|------------|
+| `Parallel.For(...)`           | **呼び出し元のスレッド** | ❌ フリーズする可能性あり（UI含む） |
+| `Task.Run(() => Parallel.For)` | **スレッドプール上で非同期** | ✅ UIフリーズしない |
+| `await Task.Run(...)`         | 非同期で完了を待てる  | ✅ UIも進捗もOK！ |
+
+---
+
+## 🚀 実用コード（キャンセル付き＆非同期）
+
+```csharp
+private async void StartButton_Click(object sender, RoutedEventArgs e)
+{
+    StartButton.IsEnabled = false;
+    CancelButton.IsEnabled = true;
+
+    CancellationTokenSource cts = new();
+    _cts = cts;
+
+    try
+    {
+        await Task.Run(() =>
+        {
+            Parallel.For(0, 10000, new ParallelOptions { CancellationToken = cts.Token }, i =>
+            {
+                cts.Token.ThrowIfCancellationRequested();
+                HeavyWork(i);
+            });
+        });
+
+        MessageBox.Show("完了！");
+    }
+    catch (OperationCanceledException)
+    {
+        MessageBox.Show("キャンセルされました");
+    }
+    finally
+    {
+        StartButton.IsEnabled = true;
+        CancelButton.IsEnabled = false;
+    }
+}
+```
+
+---
+
+## ☝ 補足Tips
+
+- `Parallel.For` は基本 **CPUバウンド処理向け**
+- IO系処理（ファイル・ネットワークなど）なら **`async/await` + `Task.WhenAll`** が向いてる！
+
+---
+
+もし、「ファイル読み込み」や「画像の変換」みたいな処理を並列でやるなら、`Parallel.For`がいいか、`Task`ベースがいいか一緒に選べるよ！どんな処理やってるか気軽に教えて〜🙌

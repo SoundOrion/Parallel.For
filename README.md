@@ -561,3 +561,46 @@ Task と async/await によるタスク実行：
 ---
 
 もっと実用的なシナリオ（例：HTTPリクエストを並列実行、DB処理など）での `async/await` 活用例も紹介できますよ。興味あります？
+
+
+お、良い質問！
+
+`Interlocked.Increment(ref progress)` はスレッドセーフに整数をインクリメントしてくれる高速な方法なんだけど、もしこれを `lock` を使って書き換えると、こんな感じになります👇
+
+---
+
+### 🔁 `Interlocked.Increment` を `lock` に置き換えた例：
+
+```csharp
+private static object _lockObj = new object();
+private static int progress = 0;
+
+int current;
+lock (_lockObj)
+{
+    progress++;
+    current = progress;
+}
+```
+
+---
+
+### 📝 補足ポイント：
+
+- `Interlocked.Increment` はロックを使わない分、**高速**かつ**軽量**。
+- `lock` 版は**可読性は高い**けど、**オーバーヘッドはやや大きめ**（特に並列数が多いと差が出る）。
+- `current = progress` を `lock` の外に出しちゃうと意味がないから、**両方セットでロック内に書くのが正解**。
+
+---
+
+### ✅ どっちを使うべき？
+
+| 条件 | おすすめ |
+|------|----------|
+| 単純なインクリメントだけ | `Interlocked.Increment` |
+| 複数の変数や複雑な処理もまとめて保護したい | `lock` |
+
+---
+
+使うケースによって書き分ければOK！  
+他に `Interlocked` 系で気になってる操作とかある？
